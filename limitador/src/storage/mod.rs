@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use std::collections::HashSet;
 use thiserror::Error;
 
+mod concurrent;
 pub mod in_memory;
 pub mod wasm;
 
@@ -15,6 +16,8 @@ pub mod infinispan;
 
 #[cfg(any(feature = "redis_storage", feature = "infinispan_storage"))]
 mod keys;
+
+pub use concurrent::ConcurrentStorage;
 
 pub enum Authorization {
     Ok,
