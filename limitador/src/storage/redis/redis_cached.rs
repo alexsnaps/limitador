@@ -98,11 +98,11 @@ impl AsyncStorage for CachedRedisStorage {
     // limits. In order to do so, we'd need to run this whole function
     // atomically, but that'd be too slow.
     // This function trades accuracy for speed.
-    async fn check_and_update<'c>(
+    async fn check_and_update(
         &self,
-        counters: &HashSet<&'c Counter>,
+        counters: &HashSet<&Counter>,
         delta: i64,
-    ) -> Result<Authorization<'c>, StorageErr> {
+    ) -> Result<Authorization, StorageErr> {
         let mut con = self.redis_conn_manager.clone();
 
         let mut not_cached: Vec<&Counter> = vec![];
@@ -114,7 +114,9 @@ impl AsyncStorage for CachedRedisStorage {
                 match cached_counters.get(counter) {
                     Some(val) => {
                         if val - delta < 0 {
-                            return Ok(Authorization::Limited(counter));
+                            return Ok(Authorization::Limited(
+                                counter.limit().name().map(|s| s.to_owned()),
+                            ));
                         }
                     }
                     None => {
@@ -154,12 +156,16 @@ impl AsyncStorage for CachedRedisStorage {
                 match counter_vals[i] {
                     Some(val) => {
                         if val - delta < 0 {
-                            return Ok(Authorization::Limited(counter));
+                            return Ok(Authorization::Limited(
+                                counter.limit().name().map(|s| s.to_owned()),
+                            ));
                         }
                     }
                     None => {
                         if counter.max_value() - delta < 0 {
-                            return Ok(Authorization::Limited(counter));
+                            return Ok(Authorization::Limited(
+                                counter.limit().name().map(|s| s.to_owned()),
+                            ));
                         }
                     }
                 }

@@ -115,11 +115,11 @@ impl Storage for RedisStorage {
         Ok(())
     }
 
-    fn check_and_update<'c>(
+    fn check_and_update(
         &self,
-        counters: &HashSet<&'c Counter>,
+        counters: &HashSet<&Counter>,
         delta: i64,
-    ) -> Result<Authorization<'c>, StorageErr> {
+    ) -> Result<Authorization, StorageErr> {
         let mut con = self.conn_pool.get()?;
 
         let counter_keys: Vec<String> = counters
@@ -134,12 +134,16 @@ impl Storage for RedisStorage {
             match counter_vals[i] {
                 Some(val) => {
                     if val - delta < 0 {
-                        return Ok(Authorization::Limited(counter));
+                        return Ok(Authorization::Limited(
+                            counter.limit().name().map(|s| s.to_owned()),
+                        ));
                     }
                 }
                 None => {
                     if counter.max_value() - delta < 0 {
-                        return Ok(Authorization::Limited(counter));
+                        return Ok(Authorization::Limited(
+                            counter.limit().name().map(|s| s.to_owned()),
+                        ));
                     }
                 }
             }

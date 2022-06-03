@@ -16,9 +16,9 @@ pub mod infinispan;
 #[cfg(any(feature = "redis_storage", feature = "infinispan_storage"))]
 mod keys;
 
-pub enum Authorization<'c> {
+pub enum Authorization {
     Ok,
-    Limited(&'c Counter), // First counter found over the limits
+    Limited(Option<String>), // First counter found over the limits
 }
 
 pub trait Storage: Sync + Send {
@@ -29,11 +29,11 @@ pub trait Storage: Sync + Send {
     fn delete_limits(&self, namespace: &Namespace) -> Result<(), StorageErr>;
     fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr>;
     fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr>;
-    fn check_and_update<'c>(
+    fn check_and_update(
         &self,
-        counters: &HashSet<&'c Counter>,
+        counters: &HashSet<&Counter>,
         delta: i64,
-    ) -> Result<Authorization<'c>, StorageErr>;
+    ) -> Result<Authorization, StorageErr>;
     fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr>;
     fn clear(&self) -> Result<(), StorageErr>;
 }
@@ -47,11 +47,11 @@ pub trait AsyncStorage: Sync + Send {
     async fn delete_limits(&self, namespace: &Namespace) -> Result<(), StorageErr>;
     async fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr>;
     async fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr>;
-    async fn check_and_update<'c>(
+    async fn check_and_update(
         &self,
-        counters: &HashSet<&'c Counter>,
+        counters: &HashSet<&Counter>,
         delta: i64,
-    ) -> Result<Authorization<'c>, StorageErr>;
+    ) -> Result<Authorization, StorageErr>;
     async fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr>;
     async fn clear(&self) -> Result<(), StorageErr>;
 }
