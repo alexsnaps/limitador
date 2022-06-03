@@ -153,13 +153,13 @@ impl Storage for WasmStorage {
 
     fn check_and_update(
         &self,
-        counters: &HashSet<&Counter>,
+        counters: HashSet<Counter>,
         delta: i64,
     ) -> Result<Authorization, StorageErr> {
         // This makes the operator of check + update atomic
         let mut stored_counters = self.counters.write().unwrap();
 
-        for counter in counters {
+        for counter in &counters {
             if !self.counter_is_within_limits(counter, stored_counters.get(counter), delta) {
                 return Ok(Authorization::Limited(
                     counter.limit().name().map(|s| s.to_owned()),
@@ -167,7 +167,7 @@ impl Storage for WasmStorage {
             }
         }
 
-        for &counter in counters {
+        for counter in &counters {
             self.insert_or_update_counter(&mut stored_counters, counter, delta)
         }
 

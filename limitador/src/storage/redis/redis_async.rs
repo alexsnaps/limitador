@@ -133,15 +133,12 @@ impl AsyncStorage for AsyncRedisStorage {
 
     async fn check_and_update(
         &self,
-        counters: &HashSet<&Counter>,
+        counters: HashSet<Counter>,
         delta: i64,
     ) -> Result<Authorization, StorageErr> {
         let mut con = self.conn_manager.clone();
 
-        let counter_keys: Vec<String> = counters
-            .iter()
-            .map(|counter| key_for_counter(counter))
-            .collect();
+        let counter_keys: Vec<String> = counters.iter().map(key_for_counter).collect();
 
         let counter_vals: Vec<Option<i64>> = redis::cmd("MGET")
             .arg(counter_keys)
@@ -168,7 +165,7 @@ impl AsyncStorage for AsyncRedisStorage {
         }
 
         // TODO: this can be optimized by using pipelines with multiple updates
-        for counter in counters {
+        for counter in &counters {
             self.update_counter(counter, delta).await?
         }
 

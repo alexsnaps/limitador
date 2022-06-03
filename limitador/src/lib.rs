@@ -396,11 +396,11 @@ impl RateLimiter {
         <N as TryInto<Namespace>>::Error: Debug,
     {
         let namespace = namespace.try_into().unwrap();
-        let counters = self.counters_that_apply(namespace.clone(), values)?;
+        let mut counters = self.counters_that_apply(namespace.clone(), values)?;
 
         let check_result = self
             .storage
-            .check_and_update(&counters.iter().collect(), delta)?;
+            .check_and_update(counters.drain(..).collect(), delta)?;
 
         match check_result {
             Authorization::Ok => {
@@ -594,7 +594,7 @@ impl AsyncRateLimiter {
     {
         // the above where-clause is needed in order to call unwrap().
         let namespace = namespace.try_into().unwrap();
-        let counters = self.counters_that_apply(namespace.clone(), values).await?;
+        let mut counters = self.counters_that_apply(namespace.clone(), values).await?;
 
         if counters.is_empty() {
             self.prometheus_metrics.incr_authorized_calls(&namespace);
@@ -603,7 +603,7 @@ impl AsyncRateLimiter {
 
         let check_result = self
             .storage
-            .check_and_update(&counters.iter().collect(), delta)
+            .check_and_update(counters.drain(..).collect(), delta)
             .await?;
 
         match check_result {

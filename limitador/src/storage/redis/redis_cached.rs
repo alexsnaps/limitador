@@ -100,7 +100,7 @@ impl AsyncStorage for CachedRedisStorage {
     // This function trades accuracy for speed.
     async fn check_and_update(
         &self,
-        counters: &HashSet<&Counter>,
+        counters: HashSet<Counter>,
         delta: i64,
     ) -> Result<Authorization, StorageErr> {
         let mut con = self.redis_conn_manager.clone();
@@ -110,7 +110,7 @@ impl AsyncStorage for CachedRedisStorage {
         // Check cached counters
         {
             let cached_counters = self.cached_counters.lock().await;
-            for counter in counters {
+            for counter in &counters {
                 match cached_counters.get(counter) {
                     Some(val) => {
                         if val - delta < 0 {
@@ -175,7 +175,7 @@ impl AsyncStorage for CachedRedisStorage {
         // Update cached values
         {
             let mut cached_counters = self.cached_counters.lock().await;
-            for counter in counters {
+            for counter in &counters {
                 cached_counters.decrease_by(counter, delta);
             }
         }
@@ -183,11 +183,11 @@ impl AsyncStorage for CachedRedisStorage {
         // Batch or update depending on configuration
         if self.batching_is_enabled {
             let batcher = self.batcher_counter_updates.lock().await;
-            for counter in counters {
+            for counter in &counters {
                 batcher.add_counter(counter, delta).await
             }
         } else {
-            for counter in counters {
+            for counter in &counters {
                 self.update_counter(counter, delta).await?
             }
         }

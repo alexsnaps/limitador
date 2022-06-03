@@ -158,10 +158,10 @@ impl AsyncStorage for InfinispanStorage {
 
     async fn check_and_update(
         &self,
-        counters: &HashSet<&Counter>,
+        counters: HashSet<Counter>,
         delta: i64,
     ) -> Result<Authorization, StorageErr> {
-        for counter in counters {
+        for &counter in counters {
             if !self.is_within_limits(counter, delta).await? {
                 return Ok(Authorization::Limited(
                     counter.limit().name().map(|s| s.to_owned()),
@@ -170,7 +170,7 @@ impl AsyncStorage for InfinispanStorage {
         }
 
         // Update only if all are withing limits
-        for counter in counters {
+        for &counter in counters {
             self.update_counter(counter, delta).await?
         }
 

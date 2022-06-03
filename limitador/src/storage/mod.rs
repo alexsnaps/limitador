@@ -31,7 +31,7 @@ pub trait Storage: Sync + Send {
     fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr>;
     fn check_and_update(
         &self,
-        counters: &HashSet<&Counter>,
+        counters: HashSet<Counter>,
         delta: i64,
     ) -> Result<Authorization, StorageErr>;
     fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr>;
@@ -49,7 +49,7 @@ pub trait AsyncStorage: Sync + Send {
     async fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr>;
     async fn check_and_update(
         &self,
-        counters: &HashSet<&Counter>,
+        counters: HashSet<Counter>,
         delta: i64,
     ) -> Result<Authorization, StorageErr>;
     async fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr>;
