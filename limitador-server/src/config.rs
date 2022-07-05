@@ -21,7 +21,7 @@
 use std::env;
 
 pub struct Configuration {
-    pub limits_file: Option<String>,
+    pub limits_file: String,
     pub storage: StorageConfiguration,
     rls_host: String,
     rls_port: u16,
@@ -35,7 +35,7 @@ impl Configuration {
         let rls_port = env::var("ENVOY_RLS_PORT").unwrap_or_else(|_| "8081".to_string());
         let http_port = env::var("HTTP_API_PORT").unwrap_or_else(|_| "8080".to_string());
         Ok(Self {
-            limits_file: env::var("LIMITS_FILE").ok(),
+            limits_file: env::var("LIMITS_FILE").expect("No limit file provided!"),
             storage: storage_config_from_env()?,
             rls_host: env::var("ENVOY_RLS_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
             rls_port: rls_port.parse().expect("Expected a port number!"),
