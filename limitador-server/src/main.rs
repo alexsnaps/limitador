@@ -12,6 +12,7 @@ use crate::config::{
 };
 use crate::envoy_rls::server::{run_envoy_rls_server, RateLimitHeaders};
 use crate::http_api::server::run_http_server;
+use crate::metrics::MetricsLayer;
 use clap::{value_parser, Arg, ArgAction, Command};
 use const_format::formatcp;
 use limitador::counter::Counter;
@@ -52,6 +53,7 @@ mod envoy_rls;
 mod http_api;
 
 mod config;
+mod metrics;
 
 const LIMITADOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 const LIMITADOR_PROFILE: &str = env!("LIMITADOR_PROFILE");
@@ -300,7 +302,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             tracing_subscriber::fmt::layer()
         };
+        // let metrics_layer = Builder::default().layer(|| Histogram::new_with_max(1_000_000, 2).unwrap());
+        let metrics_layer = MetricsLayer::new().gather(
+            "should_rate_limit",
+            |timings| println!("should_rate_limit/datastore timings: {:?}", timings),
+            vec!["datastore"],
+        );
+        // .consume(|);
+        // should_rate_limit
+        //      datastore
 
+        // let mut subscriber = &tracing_subscriber::registry().with(level).with(fmt_layer);
         if !config.tracing_host.is_empty() {
             let tracer = opentelemetry_otlp::new_pipeline()
                 .tracing()
@@ -315,17 +327,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ])))
                 .install_batch(opentelemetry_sdk::runtime::Tokio)?;
             let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+            // subscriber.with(telemetry_layer);
             tracing_subscriber::registry()
                 .with(level)
                 .with(fmt_layer)
                 .with(telemetry_layer)
+                // .with(MetricsLayer)
+                .with(metrics_layer)
                 .init();
         } else {
             tracing_subscriber::registry()
                 .with(level)
                 .with(fmt_layer)
+                // .with(MetricsLayer)
+                .with(metrics_layer)
                 .init();
         };
+
+        // subscriber.init();
 
         info!("Version: {}", version);
         info!("Using config: {:?}", config);
@@ -345,6 +364,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             process::exit(1)
         }
     };
+    // match rate_limiter {
+    //     Limiter::Blocking(limiter) => limiter.,
+    //     Limiter::Async(limiter) => limiter.gather_prometheus_metrics(),
+    // }
 
     info!("limits file path: {}", limit_file);
     if let Err(e) = rate_limiter.load_limits_from_file(&limit_file).await {
