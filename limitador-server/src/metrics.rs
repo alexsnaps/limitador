@@ -7,7 +7,7 @@ use tracing_subscriber::layer::{Context, Layer};
 use tracing_subscriber::registry::LookupSpan;
 
 #[derive(Debug, Clone, Copy)]
-struct Timings {
+pub struct Timings {
     idle: u64,
     busy: u64,
     last: Instant,
@@ -66,14 +66,14 @@ impl SpanState {
 }
 
 pub struct MetricsGroup {
-    consumer: Box<dyn FnOnce(Timings)>,
+    consumer: fn(Timings),
     records: Vec<String>,
 }
 
 impl MetricsGroup {
     pub fn new(consumer: fn(Timings), records: Vec<String>) -> Self {
         Self {
-            consumer: Box::new(consumer),
+            consumer,
             records,
         }
     }
@@ -158,7 +158,7 @@ where
         if let Some(span_state) = extensions.get_mut::<SpanState>() {
             // either we are an aggregator or nested within one
             for group in span_state.group_times.keys() {
-                for record in self.groups.get(group).unwrap().records {
+                for record in &self.groups.get(group).unwrap().records {
                     if name == record {
                         extensions.insert(Timings::new());
                         return;
@@ -207,7 +207,7 @@ where
             if let Some(span_state) = extensions.get_mut::<SpanState>() {
                 let group_times = span_state.group_times.clone();
                 'aggregate: for group in group_times.keys() {
-                    for record in self.groups.get(group).unwrap().records {
+                    for record in &self.groups.get(group).unwrap().records {
                         if name == record {
                             span_state.increment(group.to_string(), t);
                             continue 'aggregate;
