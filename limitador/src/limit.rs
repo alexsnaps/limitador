@@ -5,6 +5,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::time::Duration;
 
 #[cfg(feature = "lenient_conditions")]
 mod deprecated {
@@ -62,8 +63,8 @@ pub struct Limit {
 
     // Need to sort to generate the same object when using the JSON as a key or
     // value in Redis.
-    conditions: BTreeSet<Condition>,
-    variables: BTreeSet<String>,
+    pub(crate) conditions: BTreeSet<Condition>,
+    pub(crate) variables: BTreeSet<String>,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Eq, Debug, Clone, Hash, PartialOrd, Ord)]
@@ -356,6 +357,10 @@ impl Limit {
 
     pub fn seconds(&self) -> u64 {
         self.seconds
+    }
+
+    pub fn window(&self) -> Duration {
+        Duration::from_secs(self.seconds)
     }
 
     pub fn name(&self) -> Option<&str> {

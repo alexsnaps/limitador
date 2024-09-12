@@ -31,6 +31,24 @@ impl Counter {
         }
     }
 
+    pub fn with_value<L: Into<Arc<Limit>>>(
+        limit: L,
+        remaining: u64,
+        expiry: Duration,
+        set_variables: HashMap<String, String>,
+    ) -> Self {
+        let limit = limit.into();
+        let mut vars = set_variables;
+        vars.retain(|var, _| limit.has_variable(var));
+
+        Self {
+            limit,
+            set_variables: vars.into_iter().collect(),
+            remaining: Some(remaining),
+            expires_in: Some(expiry),
+        }
+    }
+
     #[cfg(any(feature = "redis_storage", feature = "disk_storage"))]
     pub(crate) fn key(&self) -> Self {
         Self {

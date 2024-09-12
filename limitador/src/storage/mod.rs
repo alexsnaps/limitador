@@ -1,9 +1,14 @@
 use crate::counter::Counter;
-use crate::limit::{Limit, Namespace};
+use crate::limit::{Condition, Limit, Namespace};
+use crate::storage::atomic_expiring_value::AtomicExpiringValue;
+use crate::storage::CounterValueSetKey::{Anonymous, Identity};
 use crate::InMemoryStorage;
 use async_trait::async_trait;
-use std::collections::{HashMap, HashSet};
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
+use std::time::SystemTime;
 use thiserror::Error;
 
 #[cfg(feature = "disk_storage")]
@@ -308,6 +313,184 @@ pub trait AsyncCounterStorage: Sync + Send {
     async fn clear(&self) -> Result<(), StorageErr>;
 }
 
+#[derive(Default)]
+pub(crate) struct CounterValueSet {
+    values: Vec<CounterValue>,
+}
+
+impl CounterValueSet {
+    pub fn new(windows: &[Duration]) -> Self {
+        Self {
+            values: windows
+                .iter()
+                .map(|d| CounterValue::from_secs(d.as_secs()))
+                .collect(),
+        }
+    }
+
+    pub fn add_window(&mut self, window: Duration) {
+        for v in &self.values {
+            match v.seconds.cmp(&window.as_secs()) {
+                Ordering::Less => {}
+                Ordering::Equal => return,
+                Ordering::Greater => break,
+            }
+        }
+        self.values.push(CounterValue {
+            seconds: window.as_secs(),
+            value: Default::default(),
+        });
+        self.values.sort_by(|a, b| a.seconds.cmp(&b.seconds));
+    }
+
+    pub fn value(&self, window: Duration) -> u64 {
+        for v in &self.values {
+            match v.seconds.cmp(&window.as_secs()) {
+                Ordering::Less => {}
+                Ordering::Equal => return v.value.value(),
+                Ordering::Greater => break,
+            }
+        }
+        0
+    }
+
+    pub fn expiring_value_of(&self, window: Duration) -> Option<&AtomicExpiringValue> {
+        for v in &self.values {
+            match v.seconds.cmp(&window.as_secs()) {
+                Ordering::Less => {}
+                Ordering::Equal => return Some(&v.value),
+                Ordering::Greater => break,
+            }
+        }
+        None
+    }
+
+    pub fn update(&self, window: Duration, delta: u64, when: SystemTime) -> Result<u64, ()> {
+        for v in &self.values {
+            match v.seconds.cmp(&window.as_secs()) {
+                Ordering::Less => {}
+                Ordering::Equal => return Ok(v.value.update(delta, window, when)),
+                Ordering::Greater => break,
+            }
+        }
+        Err(())
+    }
+
+    pub fn to_counters(&self, limit: &Arc<Limit>) -> Vec<Counter> {
+        self.values
+            .iter()
+            .map(|v| {
+                Counter::with_value(
+                    limit.clone(),
+                    limit.max_value() - v.value(),
+                    v.ttl(),
+                    HashMap::default(),
+                )
+            })
+            .collect()
+    }
+}
+
+pub(crate) struct CounterValue {
+    seconds: u64,
+    value: AtomicExpiringValue,
+}
+
+impl CounterValue {
+    pub fn from_secs(window: u64) -> Self {
+        Self {
+            seconds: window,
+            value: Default::default(),
+        }
+    }
+
+    pub fn value(&self) -> u64 {
+        self.value.value()
+    }
+
+    pub fn ttl(&self) -> Duration {
+        self.value.ttl()
+    }
+}
+
+#[derive(Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(crate) struct QualifiedCounterValueSetKey {
+    limit_key: CounterValueSetKey,
+    qualifiers: BTreeMap<String, String>,
+}
+
+impl From<&Counter> for QualifiedCounterValueSetKey {
+    fn from(counter: &Counter) -> Self {
+        Self {
+            limit_key: counter.limit().into(),
+            qualifiers: counter.set_variables().clone(),
+        }
+    }
+}
+
+#[derive(Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(crate) enum CounterValueSetKey {
+    Identity(String),
+    Anonymous(LimitKey),
+}
+
+impl CounterValueSetKey {
+    pub fn applies_to(&self, limit: &Limit) -> bool {
+        match limit.id() {
+            None => {
+                if let Anonymous(key) = self {
+                    key.applies_to(limit)
+                } else {
+                    false
+                }
+            }
+            Some(id) => {
+                if let Identity(our_id) = self {
+                    id == our_id
+                } else {
+                    false
+                }
+            }
+        }
+    }
+}
+
+impl From<&Limit> for CounterValueSetKey {
+    fn from(limit: &Limit) -> Self {
+        match limit.id() {
+            Some(id) => Identity(id.to_string()),
+            None => Anonymous(limit.into()),
+        }
+    }
+}
+
+#[derive(Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(crate) struct LimitKey {
+    namespace: Namespace,
+    window: Duration,
+    conditions: BTreeSet<Condition>,
+    variables: BTreeSet<String>,
+}
+
+impl LimitKey {
+    pub fn applies_to(&self, limit: &Limit) -> bool {
+        limit.namespace() == &self.namespace
+            && limit.window() == self.window
+            && limit.conditions == self.conditions
+            && limit.variables == self.variables
+    }
+}
+impl From<&Limit> for LimitKey {
+    fn from(limit: &Limit) -> Self {
+        Self {
+            namespace: limit.namespace().clone(),
+            window: Duration::from_secs(limit.seconds()),
+            conditions: limit.conditions.clone(),
+            variables: limit.variables.clone(),
+        }
+    }
+}
+
 #[derive(Error, Debug)]
 #[error("error while accessing the limits storage: {msg}")]
 pub struct StorageErr {
@@ -322,5 +505,32 @@ impl StorageErr {
 
     pub fn is_transient(&self) -> bool {
         self.transient
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::storage::CounterValueSet;
+    use std::time::Duration;
+
+    #[test]
+    fn test_counter_value_set_is_always_sorted() {
+        let mut counters = CounterValueSet::default();
+        counters.add_window(Duration::from_secs(20));
+        assert_eq!(counters.values[0].seconds, 20);
+        counters.add_window(Duration::from_secs(1));
+        assert_eq!(counters.values[0].seconds, 1);
+        assert_eq!(counters.values[1].seconds, 20);
+        counters.add_window(Duration::from_secs(12));
+        assert_eq!(counters.values[0].seconds, 1);
+        assert_eq!(counters.values[1].seconds, 12);
+        assert_eq!(counters.values[2].seconds, 20);
+        counters.add_window(Duration::from_secs(30));
+        counters.add_window(Duration::from_secs(12));
+        assert_eq!(counters.values.len(), 4);
+        assert_eq!(counters.values[0].seconds, 1);
+        assert_eq!(counters.values[1].seconds, 12);
+        assert_eq!(counters.values[2].seconds, 20);
+        assert_eq!(counters.values[3].seconds, 30);
     }
 }
